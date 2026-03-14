@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ESNext",
+    "outDir": "dist-server",
+    "rootDir": ".",
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": false,
+    "noEmit": false
+  },
+  "include": [
+    "server.ts",
+    "services/db.ts",
+    "models/**/*.ts",
+    "services/storage.ts",
+    "types.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "src",
+    "dist"
+  ]
+}
