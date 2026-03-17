@@ -35,6 +35,7 @@ const JobSchema: Schema = new Schema({
   urgentUntil: { type: Number },
   views: { type: Number, default: 0 },
   postedAt: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now, expires: 30 * 24 * 60 * 60 }, // Auto-delete after 30 days
   isVerified: { type: Boolean, default: false },
   coordinates: {
     lat: { type: Number },
@@ -45,4 +46,5 @@ const JobSchema: Schema = new Schema({
   timestamps: false // We use postedAt manually
 });
 
-export default mongoose.model<IJob>('Job', JobSchema);
+const Job = mongoose.models.Job || mongoose.model<IJob>('Job', JobSchema);
+export default Job as mongoose.Model<IJob>;

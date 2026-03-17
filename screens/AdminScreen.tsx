@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { Job } from '../types';
 import { getGlobalJobs, deleteGlobalJob, adminUpdateJob } from '../services/api';
 import { Trash2, ShieldAlert, Search, RefreshCcw, LogOut, Loader2, Clock, ShieldCheck, Building2 } from 'lucide-react';
+import { useNotification } from '../components/NotificationContext';
 
 interface AdminScreenProps {
   onLogout: () => void;
 }
 
 const AdminScreen: React.FC<AdminScreenProps> = ({ onLogout }) => {
+  const { showNotification } = useNotification();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -17,9 +19,15 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onLogout }) => {
 
   const fetchJobs = async () => {
     setLoading(true);
-    const data = await getGlobalJobs();
-    setJobs(data);
-    setLoading(false);
+    try {
+      const data = await getGlobalJobs();
+      setJobs(data);
+    } catch (err) {
+      console.error('Admin fetch failed:', err);
+      showNotification("Failed to sync database. Check your connection.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -33,12 +41,12 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onLogout }) => {
         const success = await deleteGlobalJob(id, undefined, 'saudi_admin_2025');
         if (success) {
           setJobs(prev => prev.filter(j => j.id !== id));
-          alert('Job deleted successfully by Admin.');
+          showNotification('Job deleted successfully by Admin.', 'success');
         } else {
-          alert('Failed to delete job. It might have been already removed.');
+          showNotification('Failed to delete job. It might have been already removed.', 'error');
         }
       } catch (err) {
-        alert('An error occurred during deletion.');
+        showNotification('An error occurred during deletion.', 'error');
       } finally {
         setDeletingId(null);
       }
@@ -50,8 +58,9 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onLogout }) => {
     try {
       const updated = await adminUpdateJob(job.id, { isVerified: !job.isVerified });
       setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
+      showNotification(`Employer ${!job.isVerified ? 'verified' : 'unverified'} successfully.`, 'success');
     } catch (err) {
-      alert('Failed to update verification status.');
+      showNotification('Failed to update verification status.', 'error');
     } finally {
       setVerifyingId(null);
     }

@@ -23,6 +23,20 @@ const App: React.FC = () => {
   const [globalJobs, setGlobalJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   
+  // Deep linking for shared jobs
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get('jobId');
+    if (jobId && globalJobs.length > 0) {
+      const job = globalJobs.find(j => j.id === jobId);
+      if (job) {
+        setSelectedJob(job);
+        // Clear the URL params without refreshing
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [globalJobs]);
+  
   // Admin Login State
   const [adminId, setAdminId] = useState('');
   const [adminPass, setAdminPass] = useState('');
@@ -96,17 +110,17 @@ const App: React.FC = () => {
 
     switch (activeTab) {
       case 'ALL_JOBS':
-        return <AllJobsScreen />;
+        return <AllJobsScreen onJobClick={setSelectedJob} />;
       case 'POST_JOB':
         return <PostJobScreen onSuccess={() => setActiveTab('ALL_JOBS')} />;
       case 'SAVED_JOBS':
-        return <SavedJobsScreen />;
+        return <SavedJobsScreen onJobClick={setSelectedJob} />;
       case 'ALERTS':
-        return <AlertsScreen lastCheckTime={lastCheckTime} />;
+        return <AlertsScreen lastCheckTime={lastCheckTime} onJobClick={setSelectedJob} />;
       case 'MANAGE':
         return <ManageScreen />;
       default:
-        return <AllJobsScreen />;
+        return <AllJobsScreen onJobClick={setSelectedJob} />;
     }
   };
 

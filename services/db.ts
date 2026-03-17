@@ -9,11 +9,14 @@ export const connectDB = async () => {
     }
 
     await mongoose.connect(uri, {
-      dbName: 'saudijob'
+      dbName: 'saudijob',
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      connectTimeoutMS: 10000,
     });
-    console.log('MongoDB connected successfully to saudijob database');
+    const host = mongoose.connection.host;
+    console.log(`MongoDB connected successfully to host: ${host}`);
   } catch (error) {
     console.error('MongoDB connection error:', error);
-    process.exit(1);
+    // Don't exit process, allow server to start so user can see error messages or fix config
   }
 };

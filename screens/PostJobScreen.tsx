@@ -2,12 +2,15 @@
 import React, { useState } from 'react';
 import { User, Phone, MapPin, Briefcase, FileText, Mail, Send, CheckCircle2, Zap, Building2, ShieldCheck } from 'lucide-react';
 import { postGlobalJob } from '../services/api';
+import { useNotification } from '../components/NotificationContext';
+import { SAUDI_CITIES, CITY_COORDS, DEFAULT_COORDS } from '../constants';
 
 interface PostJobScreenProps {
   onSuccess: () => void;
 }
 
 const PostJobScreen: React.FC<PostJobScreenProps> = ({ onSuccess }) => {
+  const { showNotification } = useNotification();
   const [formData, setFormData] = useState({
     fullName: '',
     phoneNumber: '',
@@ -24,8 +27,6 @@ const PostJobScreen: React.FC<PostJobScreenProps> = ({ onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const cities = ['Riyadh', 'Jeddah', 'Dammam', 'Makkah', 'Madinah', 'Khobar', 'Dhahran', 'Abha', 'Tabuk', 'Other'];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.agreedToTerms) {
@@ -35,18 +36,6 @@ const PostJobScreen: React.FC<PostJobScreenProps> = ({ onSuccess }) => {
 
     setIsSubmitting(true);
     
-    const cityCoords: Record<string, { lat: number; lng: number }> = {
-      'Riyadh': { lat: 24.7136, lng: 46.6753 },
-      'Jeddah': { lat: 21.4858, lng: 39.1925 },
-      'Dammam': { lat: 26.4207, lng: 50.0888 },
-      'Makkah': { lat: 21.3891, lng: 39.8579 },
-      'Madinah': { lat: 24.4672, lng: 39.6024 },
-      'Khobar': { lat: 26.2172, lng: 50.1971 },
-      'Dhahran': { lat: 26.2361, lng: 50.1111 },
-      'Abha': { lat: 18.2164, lng: 42.5053 },
-      'Tabuk': { lat: 28.3998, lng: 36.5715 },
-    };
-
     const { agreedToTerms, customCity, ...jobData } = formData;
     if (jobData.city === 'Other') {
       jobData.city = customCity || 'Other';
@@ -54,17 +43,30 @@ const PostJobScreen: React.FC<PostJobScreenProps> = ({ onSuccess }) => {
 
     const finalJobData = {
       ...jobData,
-      coordinates: cityCoords[jobData.city] || { lat: 24.7136, lng: 46.6753 }, // Default to Riyadh if unknown
+      coordinates: CITY_COORDS[jobData.city] || DEFAULT_COORDS, // Default to Riyadh if unknown
       isVerified: false // Default to false, can be updated by admin
     };
 
-    await postGlobalJob(finalJobData);
-    
-    setIsSubmitting(false);
-    setSubmitted(true);
-    setTimeout(() => {
-      onSuccess();
-    }, 2000);
+    try {
+      await postGlobalJob(finalJobData);
+      setSubmitted(true);
+      showNotification("Job posted successfully!", "success");
+      setTimeout(() => {
+        onSuccess();
+      }, 2000);
+    } catch (error: any) {
+      console.error('Failed to post job:', error);
+      const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
+      const isDbError = error.message?.includes('Database not connected');
+      
+      let message = "Failed to post job. Please try again later.";
+      if (isNetworkError) message = "Network error. Please check your connection.";
+      if (isDbError) message = "Database connection issue. Please ensure your MongoDB Atlas IP whitelist includes 0.0.0.0/0.";
+
+      showNotification(message, isNetworkError ? 'network' : 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -182,7 +184,7 @@ const PostJobScreen: React.FC<PostJobScreenProps> = ({ onSuccess }) => {
                 className="w-full bg-white border border-gray-100 rounded-xl pl-12 pr-4 py-4 shadow-sm focus:ring-2 focus:ring-green-500 outline-none transition-all appearance-none"
               >
                 <option value="">Select a city</option>
-                {cities.map(city => <option key={city} value={city}>{city}</option>)}
+                {SAUDI_CITIES.map(city => <option key={city} value={city}>{city}</option>)}
               </select>
             </div>
             {formData.city === 'Other' && (

@@ -3,13 +3,17 @@ import React, { useState, useEffect } from 'react';
 import { Job } from '../types';
 import { getGlobalJobs, markAsViewedLocal } from '../services/api';
 import JobCard from '../components/JobCard';
-import JobDetailsModal from '../components/JobDetailsModal';
 import InteractiveJobMap from '../components/InteractiveJobMap';
 import { Search, SlidersHorizontal, RefreshCw, MapPin, Navigation, Map as MapIcon, X } from 'lucide-react';
+import { useNotification } from '../components/NotificationContext';
 
-const AllJobsScreen: React.FC = () => {
+interface AllJobsScreenProps {
+  onJobClick: (job: Job) => void;
+}
+
+const AllJobsScreen: React.FC<AllJobsScreenProps> = ({ onJobClick }) => {
+  const { showNotification } = useNotification();
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -31,46 +35,86 @@ const AllJobsScreen: React.FC = () => {
 
   const loadJobs = async () => {
     setLoading(true);
-    const data = await getGlobalJobs();
-    setJobs(data);
-    setLoading(false);
+    try {
+      const data = await getGlobalJobs();
+      setJobs(data);
+    } catch (error: any) {
+      console.error('Failed to load jobs:', error);
+      const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
+      const isDbError = error.message?.toLowerCase().includes('database') || error.message?.includes('503');
+      
+      let message = error.message || "We're having trouble reaching the server. Please try again later.";
+      if (isNetworkError) message = "Please check your internet connection and try again.";
+      if (isDbError) {
+        message = error.message || "Database connection issue. The server is unable to reach the database.";
+      }
+
+      showNotification(message, isNetworkError ? 'network' : 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const requestLocation = () => {
-    setLocationError(null);
+  const [isLocating, setIsLocating] = useState(false);
+
+  const requestLocation = (silent = false) => {
+    if (!silent) {
+      setLocationError(null);
+      setIsLocating(true);
+    }
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
+          const loc = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
-          });
-          setSortByDistance(true);
+          };
+          setUserLocation(loc);
+          localStorage.setItem('user_location', JSON.stringify(loc));
+          if (!silent) {
+            setSortByDistance(true);
+            setIsLocating(false);
+          }
         },
         (error) => {
-          console.error("Error getting location:", error);
-          let msg = "Could not get your location.";
-          if (error.code === 1) msg = "Location permission denied.";
-          else if (error.code === 2) msg = "Location unavailable.";
-          else if (error.code === 3) msg = "Location request timed out.";
-          
-          setLocationError(msg);
-          setSortByDistance(false);
+          if (!silent) {
+            setIsLocating(false);
+            console.error("Error getting location:", error);
+            let msg = "Could not get your location.";
+            if (error.code === 1) msg = "Location permission denied.";
+            else if (error.code === 2) msg = "Location unavailable.";
+            else if (error.code === 3) msg = "Location request timed out.";
+            
+            setLocationError(msg);
+            setSortByDistance(false);
+          }
         },
-        { timeout: 10000 }
+        { timeout: 5000, enableHighAccuracy: false }
       );
-    } else {
+    } else if (!silent) {
+      setIsLocating(false);
       setLocationError("Geolocation is not supported by your browser.");
     }
   };
 
   useEffect(() => {
     loadJobs();
+    
+    // Try to load cached location first for instant response
+    const cached = localStorage.getItem('user_location');
+    if (cached) {
+      try {
+        setUserLocation(JSON.parse(cached));
+      } catch (e) {}
+    }
+    
+    // Silently request fresh location in background
+    requestLocation(true);
   }, []);
 
   const handleJobClick = (job: Job) => {
     markAsViewedLocal(job.id);
-    setSelectedJob(job);
+    onJobClick(job);
   };
 
   const getProcessedJobs = () => {
@@ -148,11 +192,12 @@ const AllJobsScreen: React.FC = () => {
             Latest Posts
           </button>
           <button 
-            onClick={requestLocation}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${sortByDistance ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-100'}`}
+            onClick={() => requestLocation()}
+            disabled={isLocating}
+            className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${sortByDistance ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-100'} ${isLocating ? 'opacity-70' : ''}`}
           >
-            <Navigation size={12} fill={sortByDistance ? 'white' : 'none'} />
-            Jobs Near Me
+            <Navigation size={12} className={isLocating ? 'animate-pulse' : ''} fill={sortByDistance ? 'white' : 'none'} />
+            {isLocating ? 'Locating...' : 'Jobs Near Me'}
           </button>
           <button 
             onClick={() => setShowMap(true)}
@@ -191,13 +236,6 @@ const AllJobsScreen: React.FC = () => {
           )}
         </div>
       </div>
-
-      {selectedJob && (
-        <JobDetailsModal 
-          job={selectedJob} 
-          onClose={() => setSelectedJob(null)}
-        />
-      )}
 
       {showMap && (
         <InteractiveJobMap 

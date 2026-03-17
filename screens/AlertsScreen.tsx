@@ -3,18 +3,19 @@ import { Bell, Search, Plus, X, Briefcase, Zap } from 'lucide-react';
 import { Job } from '../types';
 import { getGlobalJobs, getLocalData, updateAlertRoles, markAsViewedLocal } from '../services/api';
 import JobCard from '../components/JobCard';
-import JobDetailsModal from '../components/JobDetailsModal';
+import { useNotification } from '../components/NotificationContext';
 
 interface AlertsScreenProps {
   lastCheckTime?: number;
+  onJobClick: (job: Job) => void;
 }
 
-const AlertsScreen: React.FC<AlertsScreenProps> = ({ lastCheckTime = 0 }) => {
+const AlertsScreen: React.FC<AlertsScreenProps> = ({ lastCheckTime = 0, onJobClick }) => {
+  const { showNotification } = useNotification();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [newRole, setNewRole] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const commonRoles = [
     // Construction & Technical Roles
@@ -56,10 +57,14 @@ const AlertsScreen: React.FC<AlertsScreenProps> = ({ lastCheckTime = 0 }) => {
     try {
       const data = await getGlobalJobs();
       setJobs(data);
-    } catch (error) {
-      console.error('Failed to load jobs:', error);
+    } catch (error: any) {
+      console.error('Failed to load jobs for alerts:', error);
+      const isDbError = error.message?.toLowerCase().includes('database') || error.message?.includes('503');
+      const message = isDbError ? error.message : "Could not sync job alerts. Check your connection.";
+      showNotification(message, "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleAddRole = (role: string) => {
@@ -160,7 +165,7 @@ const AlertsScreen: React.FC<AlertsScreenProps> = ({ lastCheckTime = 0 }) => {
               isNew={job.postedAt > lastCheckTime}
               onClick={() => {
                 markAsViewedLocal(job.id);
-                setSelectedJob(job);
+                onJobClick(job);
               }} 
             />
           ))
@@ -174,13 +179,6 @@ const AlertsScreen: React.FC<AlertsScreenProps> = ({ lastCheckTime = 0 }) => {
           </div>
         )}
       </div>
-
-      {selectedJob && (
-        <JobDetailsModal 
-          job={selectedJob} 
-          onClose={() => setSelectedJob(null)}
-        />
-      )}
     </div>
   );
 };

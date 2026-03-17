@@ -3,13 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { Job } from '../types';
 import { getGlobalJobs, getLocalData, toggleSaveJob } from '../services/api';
 import JobCard from '../components/JobCard';
-import JobDetailsModal from '../components/JobDetailsModal';
 import { Bookmark, Search, Loader2 } from 'lucide-react';
 
-const SavedJobsScreen: React.FC = () => {
+interface SavedJobsScreenProps {
+  onJobClick: (job: Job) => void;
+}
+
+const SavedJobsScreen: React.FC<SavedJobsScreenProps> = ({ onJobClick }) => {
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const loadSavedJobs = async () => {
     setLoading(true);
@@ -58,7 +60,7 @@ const SavedJobsScreen: React.FC = () => {
               <div key={job.id} className="relative">
                 <JobCard 
                   job={job} 
-                  onClick={() => setSelectedJob(job)} 
+                  onClick={() => onJobClick(job)} 
                   onToggleSave={(saved) => {
                     if (!saved) {
                       setSavedJobs(prev => prev.filter(j => j.id !== job.id));
@@ -80,20 +82,6 @@ const SavedJobsScreen: React.FC = () => {
           )}
         </div>
       </div>
-
-      {selectedJob && (
-        <JobDetailsModal 
-          job={selectedJob} 
-          onClose={() => {
-            setSelectedJob(null);
-            // Refresh list in case they unsaved from modal
-            const localData = getLocalData();
-            if (!localData.savedJobIds.includes(selectedJob.id)) {
-                setSavedJobs(prev => prev.filter(j => j.id !== selectedJob.id));
-            }
-          }}
-        />
-      )}
     </div>
   );
 };

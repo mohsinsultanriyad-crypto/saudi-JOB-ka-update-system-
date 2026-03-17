@@ -3,8 +3,11 @@ import { Settings, Trash2, Edit3, AlertCircle, Mail, CheckCircle2, Briefcase, Ma
 import { Job } from '../types';
 import { getGlobalJobs, deleteGlobalJob, updateGlobalJob, requestVerificationCode } from '../services/api';
 import LegalScreen from './LegalScreen';
+import { useNotification } from '../components/NotificationContext';
+import { SAUDI_CITIES, CITY_COORDS, DEFAULT_COORDS } from '../constants';
 
 const ManageScreen: React.FC = () => {
+  const { showNotification } = useNotification();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -15,14 +18,9 @@ const ManageScreen: React.FC = () => {
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [customCity, setCustomCity] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
-  const [isSendingCode, setIsSendingCode] = useState(false);
-  const [codeSent, setCodeSent] = useState(false);
-
-  const cities = ['Riyadh', 'Jeddah', 'Dammam', 'Makkah', 'Madinah', 'Khobar', 'Dhahran', 'Abha', 'Tabuk'];
 
   const handleEditClick = (job: Job) => {
-    if (cities.includes(job.city)) {
+    if (SAUDI_CITIES.includes(job.city)) {
       setCustomCity('');
       setEditingJob(job);
     } else {
@@ -52,35 +50,42 @@ const ManageScreen: React.FC = () => {
       const myJobs = allJobs.filter(job => job.email.toLowerCase() === email.toLowerCase());
       setJobs(myJobs);
     } catch (err) {
-      setError('Failed to load jobs');
+      console.error('Failed to load my jobs:', err);
+      showNotification("Failed to load your jobs. Please check your connection.", "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleRequestCode = async () => {
     setIsSendingCode(true);
-    const success = await requestVerificationCode(email);
-    setIsSendingCode(false);
-    if (success) {
-      setCodeSent(true);
-    } else {
-      alert('Failed to send verification code');
+    try {
+      const success = await requestVerificationCode(email);
+      if (success) {
+        setCodeSent(true);
+        showNotification("Verification code sent to your email.", "success");
+      } else {
+        showNotification("Failed to send code. Please try again.", "error");
+      }
+    } catch (err) {
+      showNotification("Network error. Could not send code.", "network");
+    } finally {
+      setIsSendingCode(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!verificationCode) {
-      alert('Please enter the verification code');
-      return;
-    }
-    const success = await deleteGlobalJob(id, email, undefined, verificationCode);
-    if (success) {
-      setJobs(jobs.filter(j => j.id !== id));
-      setShowDeleteConfirm(null);
-      setVerificationCode('');
-      setCodeSent(false);
-    } else {
-      alert('Delete failed: Invalid verification code');
+    try {
+      const success = await deleteGlobalJob(id, email);
+      if (success) {
+        setJobs(jobs.filter(j => j.id !== id));
+        setShowDeleteConfirm(null);
+        showNotification("Job post deleted successfully.", "success");
+      } else {
+        showNotification("Delete failed. Please try again.", "error");
+      }
+    } catch (err) {
+      showNotification("Network error. Could not delete job.", "network");
     }
   };
 
@@ -93,12 +98,17 @@ const ManageScreen: React.FC = () => {
       jobToUpdate.city = customCity || 'Other';
     }
 
+    // Update coordinates based on new city
+    jobToUpdate.coordinates = CITY_COORDS[jobToUpdate.city] || DEFAULT_COORDS;
+
     try {
       const updated = await updateGlobalJob(jobToUpdate.id, email, jobToUpdate);
       setJobs(jobs.map(j => j.id === updated.id ? updated : j));
       setEditingJob(null);
+      showNotification("Job updated successfully!", "success");
     } catch (err) {
-      alert('Update failed');
+      console.error('Update failed:', err);
+      showNotification("Failed to update job. Please try again.", "error");
     }
   };
 
@@ -202,34 +212,11 @@ const ManageScreen: React.FC = () => {
 
               {showDeleteConfirm === job.id && (
                 <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-100 animate-in slide-in-from-top-2">
-                  <p className="text-xs text-red-800 font-bold mb-3">Confirm deletion with email code</p>
-                  
-                  {!codeSent ? (
-                    <button 
-                      onClick={handleRequestCode}
-                      disabled={isSendingCode}
-                      className="w-full py-3 bg-red-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 mb-2 disabled:opacity-50"
-                    >
-                      {isSendingCode ? 'Sending...' : 'Send Verification Code'}
-                    </button>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="relative">
-                        <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input 
-                          type="text" 
-                          placeholder="6-digit code"
-                          value={verificationCode}
-                          onChange={(e) => setVerificationCode(e.target.value)}
-                          className="w-full bg-white border border-red-100 rounded-lg pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-red-500 outline-none"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => { setShowDeleteConfirm(null); setCodeSent(false); }} className="flex-1 py-2 bg-white text-gray-600 rounded-lg text-[10px] font-bold">Cancel</button>
-                        <button onClick={() => handleDelete(job.id)} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-[10px] font-bold">Confirm Delete</button>
-                      </div>
-                    </div>
-                  )}
+                  <p className="text-xs text-red-800 font-bold mb-3">Are you sure you want to delete this job?</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 py-2 bg-white text-gray-600 rounded-lg text-[10px] font-bold border border-red-100">Cancel</button>
+                    <button onClick={() => handleDelete(job.id)} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-[10px] font-bold">Yes, Delete</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -264,7 +251,7 @@ const ManageScreen: React.FC = () => {
                 onChange={(e) => setEditingJob({...editingJob, city: e.target.value})}
                 className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-500 outline-none"
               >
-                {['Riyadh', 'Jeddah', 'Dammam', 'Makkah', 'Madinah', 'Khobar', 'Dhahran', 'Abha', 'Tabuk', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                {SAUDI_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {editingJob.city === 'Other' && (
                 <input 

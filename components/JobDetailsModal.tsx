@@ -1,6 +1,7 @@
 
-import React from 'react';
-import { X, Phone, Mail, MapPin, ShieldCheck, Share2, MessageCircle, Zap, Bookmark, MessageSquare } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Phone, Mail, MapPin, ShieldCheck, Share2, MessageCircle, Zap, Bookmark, Copy, Check, QrCode } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { Job } from '../types';
 import { toggleSaveJob, getLocalData } from '../services/api';
 
@@ -10,18 +11,33 @@ interface JobDetailsModalProps {
 }
 
 const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose }) => {
-  const [isSaved, setIsSaved] = React.useState(getLocalData().savedJobIds.includes(job.id));
+  const [isSaved, setIsSaved] = useState(getLocalData().savedJobIds.includes(job.id));
+  const [showQR, setShowQR] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl = `${window.location.origin}${window.location.pathname}?jobId=${job.id}`;
 
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: `Job: ${job.jobRole} in ${job.city}`,
-        text: `Check out this job posting for ${job.jobRole} in ${job.city} on Saudi Job!`,
-        url: window.location.href,
+        title: `${job.jobRole} in ${job.city}`,
+        text: `Check out this job for ${job.jobRole} on Saudi Job!`,
+        url: shareUrl,
       }).catch(console.error);
     } else {
-      alert('Sharing not supported on this browser');
+      handleCopyLink();
     }
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleWhatsAppShare = () => {
+    const text = encodeURIComponent(`Check out this job for ${job.jobRole} in ${job.city} on Saudi Job!\n\nView details: ${shareUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const handleSave = () => {
@@ -147,6 +163,53 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose }) => {
             <p className="text-[10px] text-amber-700 leading-tight">
               Saudi Job is a platform for connecting employers and workers. We are not responsible for the accuracy of job postings or the conduct of users. Please verify all details before proceeding.
             </p>
+          </div>
+
+          <div className="mt-8 space-y-4">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Share this Job</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={handleWhatsAppShare}
+                className="flex items-center justify-center gap-2 p-3 bg-green-50 text-green-600 rounded-2xl border border-green-100 font-bold text-sm hover:bg-green-100 transition-colors"
+              >
+                <MessageCircle size={18} /> WhatsApp
+              </button>
+              <button 
+                onClick={handleCopyLink}
+                className="flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 rounded-2xl border border-blue-100 font-bold text-sm hover:bg-blue-100 transition-colors"
+              >
+                {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? 'Copied' : 'Copy Link'}
+              </button>
+            </div>
+            
+            <button 
+              onClick={() => setShowQR(!showQR)}
+              className="w-full flex items-center justify-center gap-2 p-3 bg-gray-50 text-gray-600 rounded-2xl border border-gray-100 font-bold text-sm hover:bg-gray-100 transition-colors"
+            >
+              <QrCode size={18} /> {showQR ? 'Hide QR Code' : 'Show QR Code'}
+            </button>
+
+            {showQR && (
+              <div className="flex flex-col items-center justify-center p-6 bg-white border border-gray-100 rounded-3xl shadow-inner animate-in zoom-in-95 duration-200">
+                <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-50">
+                  <QRCodeCanvas 
+                    value={shareUrl} 
+                    size={160}
+                    level="H"
+                    includeMargin={true}
+                    imageSettings={{
+                      src: "https://picsum.photos/seed/saudi/40/40",
+                      x: undefined,
+                      y: undefined,
+                      height: 24,
+                      width: 24,
+                      excavate: true,
+                    }}
+                  />
+                </div>
+                <p className="mt-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest">Scan to view job</p>
+              </div>
+            )}
           </div>
         </div>
         

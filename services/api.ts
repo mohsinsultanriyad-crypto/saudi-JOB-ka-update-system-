@@ -5,43 +5,64 @@ const getApiBase = () => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl + '/api';
   
-  // Fallback to current origin if in browser
-  if (typeof window !== 'undefined') {
-    return window.location.origin + '/api';
-  }
-  
+  // Use relative path by default for same-origin requests
   return '/api';
 };
 
 const API_BASE = getApiBase();
+console.log('API_BASE initialized as:', API_BASE);
 const LOCAL_STORAGE_KEY = 'saudi_job_local_device';
 
-export const getGlobalJobs = async (retries = 3): Promise<Job[]> => {
+let jobsCache: Job[] | null = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 30000; // 30 seconds
+
+export const getGlobalJobs = async (retries = 3, forceRefresh = false): Promise<Job[]> => {
+  const now = Date.now();
+  if (!forceRefresh && jobsCache && (now - lastFetchTime < CACHE_DURATION)) {
+    return jobsCache;
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(`${API_BASE}/jobs`);
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || `Failed to fetch jobs: ${response.status}`);
+        let errorMessage = `Server error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+          if (response.status === 503) {
+            errorMessage = `Database Unavailable: ${errorMessage}`;
+          }
+        } catch (e) {
+          // Fallback if not JSON
+        }
+        throw new Error(errorMessage);
       }
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server returned non-JSON response. Check if the server is running correctly.');
+        throw new Error('Invalid server response format (Expected JSON).');
       }
-      return response.json();
+      const data = await response.json();
+      jobsCache = data;
+      lastFetchTime = Date.now();
+      return data;
     } catch (error) {
       if (i === retries - 1) {
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-          console.error('Network error or CORS issue when fetching jobs from:', `${API_BASE}/jobs`);
+          console.error('Network error - check internet connection:', `${API_BASE}/jobs`);
         }
+        // If fetch fails but we have cache, return cache as fallback
+        if (jobsCache) return jobsCache;
         throw error;
       }
-      // Wait before retrying (1s, 2s, 3s...)
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-      console.warn(`Retrying fetch jobs (${i + 1}/${retries})...`);
+      // Exponential backoff
+      const delay = Math.min(1000 * Math.pow(2, i), 5000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      console.warn(`Retrying fetch jobs (${i + 1}/${retries}) after ${delay}ms...`);
     }
   }
-  return []; // Should not reach here
+  return jobsCache || [];
 };
 
 export const postGlobalJob = async (job: Omit<Job, 'id' | 'views' | 'postedAt'>): Promise<Job> => {
@@ -54,7 +75,10 @@ export const postGlobalJob = async (job: Omit<Job, 'id' | 'views' | 'postedAt'>)
     const errorData = await response.json().catch(() => ({ error: 'Failed to post job' }));
     throw new Error(errorData.error || 'Failed to post job');
   }
-  return response.json();
+  const newJob = await response.json();
+  // Invalidate cache
+  jobsCache = null;
+  return newJob;
 };
 
 export const updateGlobalJob = async (id: string, email: string, data: Partial<Job>): Promise<Job> => {
@@ -64,7 +88,10 @@ export const updateGlobalJob = async (id: string, email: string, data: Partial<J
     body: JSON.stringify({ ...data, email }),
   });
   if (!response.ok) throw new Error('Failed to update job');
-  return response.json();
+  const updatedJob = await response.json();
+  // Invalidate cache
+  jobsCache = null;
+  return updatedJob;
 };
 
 export const adminUpdateJob = async (id: string, data: Partial<Job>): Promise<Job> => {
@@ -74,24 +101,22 @@ export const adminUpdateJob = async (id: string, data: Partial<Job>): Promise<Jo
     body: JSON.stringify({ ...data, adminKey: 'saudi_admin_2025' }),
   });
   if (!response.ok) throw new Error('Failed to update job');
-  return response.json();
+  const updatedJob = await response.json();
+  // Invalidate cache
+  jobsCache = null;
+  return updatedJob;
 };
 
-export const deleteGlobalJob = async (id: string, email?: string, adminKey?: string, verificationCode?: string): Promise<boolean> => {
+export const deleteGlobalJob = async (id: string, email?: string, adminKey?: string): Promise<boolean> => {
   const response = await fetch(`${API_BASE}/jobs/${id}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, adminKey, verificationCode }),
+    body: JSON.stringify({ email, adminKey }),
   });
-  return response.ok;
-};
-
-export const requestVerificationCode = async (email: string): Promise<boolean> => {
-  const response = await fetch(`${API_BASE}/auth/request-verification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
+  if (response.ok) {
+    // Invalidate cache
+    jobsCache = null;
+  }
   return response.ok;
 };
 
