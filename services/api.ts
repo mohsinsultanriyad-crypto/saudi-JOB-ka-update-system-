@@ -213,3 +213,16 @@ export const updateAlertRoles = (roles: string[]) => {
   data.alertRoles = roles;
   saveLocalData(data);
 };
+
+
+export const requestVerificationCode = async (email: string): Promise<void> => {
+  const response = await fetch(`${API_BASE}/auth/request-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Verification request failed' }));
+    throw new Error(errorData.error || 'Verification request failed');
+  }
+};
