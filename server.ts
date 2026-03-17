@@ -8,36 +8,12 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { connectDB } from './services/db';
 import JobModel from './models/Job';
-import admin from 'firebase-admin';
 
 const app = express();
 const PORT = 3000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// ✅ Firebase Admin Initialize
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(
-      process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
-    );
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-    console.log('✅ Firebase Admin initialized');
-  } catch (err) {
-    console.error('❌ Firebase init error:', err);
-  }
-}
-
-// ✅ Subscription Model
-const subscriptionSchema = new mongoose.Schema({
-  fcmToken: { type: String, required: true, unique: true },
-  roles: [{ type: String }],
-  createdAt: { type: Date, default: Date.now }
-});
-const Subscription = mongoose.models.Subscription || mongoose.model('Subscription', subscriptionSchema);
 
 // Connect to MongoDB (non-blocking)
 connectDB().catch(err => {
@@ -52,7 +28,7 @@ app.use(cors({
   credentials: true
 }));
 
-app.options('*', cors());
+app.options('*', cors()); // Enable pre-flight for all routes
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -64,7 +40,7 @@ app.use((req, res, next) => {
 });
 
 const startServer = async () => {
-
+  // API Routes (MUST be defined BEFORE Vite middleware to avoid being intercepted by SPA fallback)
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
@@ -73,42 +49,12 @@ const startServer = async () => {
     });
   });
 
-  // ✅ Subscribe route - Save FCM token + roles
-  app.post('/api/subscribe', async (req, res) => {
-    try {
-      const { fcmToken, roles } = req.body;
-      if (!fcmToken) return res.status(400).json({ error: 'fcmToken is required' });
-      
-      await Subscription.findOneAndUpdate(
-        { fcmToken },
-        { fcmToken, roles: roles || [] },
-        { upsert: true, new: true }
-      );
-      console.log(`✅ Subscription saved. Token: ${fcmToken.substring(0, 20)}... Roles: ${roles}`);
-      res.json({ success: true });
-    } catch (error) {
-      console.error('❌ Subscribe error:', error);
-      res.status(500).json({ error: 'Failed to subscribe' });
-    }
-  });
-
-  // ✅ Unsubscribe route
-  app.delete('/api/subscribe', async (req, res) => {
-    try {
-      const { fcmToken } = req.body;
-      await Subscription.deleteOne({ fcmToken });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to unsubscribe' });
-    }
-  });
-
   app.get(['/api/jobs', '/api/jobs/'], async (req, res) => {
     try {
       if (mongoose.connection.readyState !== 1) {
         return res.status(503).json({ 
           error: 'Database is currently unavailable.',
-          details: 'The server is unable to connect to the database.'
+          details: 'The server is unable to connect to the database. Please check the MONGODB_URI and ensure the database is accessible.'
         });
       }
       const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
@@ -127,7 +73,7 @@ const startServer = async () => {
       if (mongoose.connection.readyState !== 1) {
         return res.status(503).json({ 
           error: 'Database is currently unavailable.',
-          details: 'The server is unable to connect to the database.'
+          details: 'The server is unable to connect to the database. Please check the MONGODB_URI and ensure the database is accessible.'
         });
       }
       const jobData = req.body;
@@ -138,50 +84,6 @@ const startServer = async () => {
       const newJob = new JobModel(newJobData);
       await newJob.save();
       res.status(201).json(newJob);
-
-      // ✅ Send notifications after job saved
-      console.log('✅ Job saved - sending notifications...');
-      try {
-        const allSubscriptions = await Subscription.find({});
-        console.log(`📋 Total subscriptions: ${allSubscriptions.length}`);
-
-        const matching = allSubscriptions.filter((sub: any) =>
-          sub.roles && sub.roles.length > 0
-            ? sub.roles.some((role: string) =>
-                newJob.title.toLowerCase().includes(role.toLowerCase()) ||
-                role.toLowerCase().includes(newJob.title.toLowerCase().split(' ')[0])
-              )
-            : false
-        );
-
-        console.log(`🎯 Matching subscriptions: ${matching.length}`);
-
-        for (const sub of matching) {
-          try {
-            await admin.messaging().send({
-              notification: {
-                title: '🔔 New Job Alert!',
-                body: `${newJob.title} - ${(newJob as any).location || 'Saudi Arabia'}`
-              },
-              android: {
-                priority: 'high',
-                notification: {
-                  sound: 'default',
-                  channelId: 'job_alerts'
-                }
-              },
-              token: sub.fcmToken
-            });
-            console.log(`✅ Notification sent!`);
-          } catch (err: any) {
-            console.error(`❌ Failed: ${err.message}`);
-          }
-        }
-        console.log('🎉 All notifications processed!');
-      } catch (err) {
-        console.error('❌ Notification error:', err);
-      }
-
     } catch (error) {
       console.error('Error posting job:', error);
       res.status(500).json({ error: 'Failed to post job' });
@@ -236,6 +138,7 @@ const startServer = async () => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
+  // Vite middleware (for development)
   if (process.env.NODE_ENV !== 'production') {
     console.log('Initializing Vite middleware...');
     try {
@@ -251,10 +154,12 @@ const startServer = async () => {
       console.error('Vite initialization failed:', e);
     }
   } else {
+    // Production static files
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
   }
 
+  // Global error handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Global Error Handler:', err);
     if (req.path.startsWith('/api/')) {
@@ -271,4 +176,5 @@ const startServer = async () => {
   });
 };
 
+// In-memory store for verification codes (Email -> {code, expires})
 startServer();
