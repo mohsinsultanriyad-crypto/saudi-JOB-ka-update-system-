@@ -84,7 +84,8 @@ const startServer = async () => {
         { fcmToken, roles: roles || [] },
         { upsert: true, new: true }
       );
-      console.log(`✅ Subscription saved. Token: ${fcmToken.substring(0, 20)}... Roles: ${roles}`);
+      const total = await Subscription.countDocuments();
+      console.log(`✅ Subscription saved. Token: ${fcmToken.substring(0, 20)}... Roles: ${roles} | Total: ${total}`);
       res.json({ success: true });
     } catch (error) {
       console.error('❌ Subscribe error:', error);
@@ -145,14 +146,16 @@ const startServer = async () => {
         const allSubscriptions = await Subscription.find({});
         console.log(`📋 Total subscriptions: ${allSubscriptions.length}`);
 
-        const matching = allSubscriptions.filter((sub: any) =>
-          sub.roles && sub.roles.length > 0
-            ? sub.roles.some((role: string) =>
-                newJob.title.toLowerCase().includes(role.toLowerCase()) ||
-                role.toLowerCase().includes(newJob.title.toLowerCase().split(' ')[0])
-              )
-            : false
-        );
+        const matching = allSubscriptions.filter((sub: any) => {
+          // ✅ FIX: Agar user ne koi role select nahi kiya to use bhi notify karo
+          if (!sub.roles || sub.roles.length === 0) return true;
+
+          // Agar role select kiya hai to match check karo
+          return sub.roles.some((role: string) =>
+            newJob.title.toLowerCase().includes(role.toLowerCase()) ||
+            role.toLowerCase().includes(newJob.title.toLowerCase().split(' ')[0])
+          );
+        });
 
         console.log(`🎯 Matching subscriptions: ${matching.length}`);
 
@@ -172,7 +175,7 @@ const startServer = async () => {
               },
               token: sub.fcmToken
             });
-            console.log(`✅ Notification sent!`);
+            console.log(`✅ Notification sent to: ${sub.fcmToken.substring(0, 20)}...`);
           } catch (err: any) {
             console.error(`❌ Failed: ${err.message}`);
           }
