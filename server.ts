@@ -146,14 +146,21 @@ const startServer = async () => {
         const allSubscriptions = await Subscription.find({});
         console.log(`📋 Total subscriptions: ${allSubscriptions.length}`);
 
+        // ✅ Job fields
+        const jobRole = (newJob as any).jobRole || (newJob as any).title || 'New Job';
+        const jobCity = (newJob as any).city || (newJob as any).location || 'Saudi Arabia';
+        const jobCompany = (newJob as any).company || '';
+
+        console.log(`📌 Job: ${jobRole} - ${jobCity}`);
+
         const matching = allSubscriptions.filter((sub: any) => {
-          // ✅ FIX: Agar user ne koi role select nahi kiya to use bhi notify karo
+          // Agar user ne koi role select nahi kiya to use bhi notify karo
           if (!sub.roles || sub.roles.length === 0) return true;
 
           // Agar role select kiya hai to match check karo
           return sub.roles.some((role: string) =>
-            newJob.title.toLowerCase().includes(role.toLowerCase()) ||
-            role.toLowerCase().includes(newJob.title.toLowerCase().split(' ')[0])
+            jobRole.toLowerCase().includes(role.toLowerCase()) ||
+            role.toLowerCase().includes(jobRole.toLowerCase().split(' ')[0])
           );
         });
 
@@ -164,18 +171,22 @@ const startServer = async () => {
             await admin.messaging().send({
               notification: {
                 title: '🔔 New Job Alert!',
-                body: `${newJob.title} - ${(newJob as any).location || 'Saudi Arabia'}`
+                // ✅ FIX: jobRole - city format like "Helper - Jubail"
+                body: `${jobRole} - ${jobCity}${jobCompany ? ' (' + jobCompany + ')' : ''}`
               },
               android: {
                 priority: 'high',
                 notification: {
                   sound: 'default',
-                  channelId: 'job_alerts'
+                  channelId: 'job_alerts',
+                  // ✅ Big text style for better notification
+                  title: '🔔 New Job Alert!',
+                  body: `${jobRole} - ${jobCity}${jobCompany ? ' (' + jobCompany + ')' : ''}`
                 }
               },
               token: sub.fcmToken
             });
-            console.log(`✅ Notification sent to: ${sub.fcmToken.substring(0, 20)}...`);
+            console.log(`✅ Notification sent: ${jobRole} - ${jobCity}`);
           } catch (err: any) {
             console.error(`❌ Failed: ${err.message}`);
           }
