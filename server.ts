@@ -146,7 +146,7 @@ const startServer = async () => {
         const allSubscriptions = await Subscription.find({});
         console.log(`📋 Total subscriptions: ${allSubscriptions.length}`);
 
-        // ✅ Job fields
+        // ✅ Job fields - sahi fields use karo
         const jobRole = (newJob as any).jobRole || (newJob as any).title || 'New Job';
         const jobCity = (newJob as any).city || (newJob as any).location || 'Saudi Arabia';
         const jobCompany = (newJob as any).company || '';
@@ -154,10 +154,10 @@ const startServer = async () => {
         console.log(`📌 Job: ${jobRole} - ${jobCity}`);
 
         const matching = allSubscriptions.filter((sub: any) => {
-          // Agar user ne koi role select nahi kiya to use bhi notify karo
-          if (!sub.roles || sub.roles.length === 0) return true;
+          // ✅ FIX: Agar roles empty hain to notify MAT karo
+          if (!sub.roles || sub.roles.length === 0) return false;
 
-          // Agar role select kiya hai to match check karo
+          // ✅ Sirf matching role ko notify karo
           return sub.roles.some((role: string) =>
             jobRole.toLowerCase().includes(role.toLowerCase()) ||
             role.toLowerCase().includes(jobRole.toLowerCase().split(' ')[0])
@@ -171,7 +171,6 @@ const startServer = async () => {
             await admin.messaging().send({
               notification: {
                 title: '🔔 New Job Alert!',
-                // ✅ FIX: jobRole - city format like "Helper - Jubail"
                 body: `${jobRole} - ${jobCity}${jobCompany ? ' (' + jobCompany + ')' : ''}`
               },
               android: {
@@ -179,7 +178,6 @@ const startServer = async () => {
                 notification: {
                   sound: 'default',
                   channelId: 'job_alerts',
-                  // ✅ Big text style for better notification
                   title: '🔔 New Job Alert!',
                   body: `${jobRole} - ${jobCity}${jobCompany ? ' (' + jobCompany + ')' : ''}`
                 }
